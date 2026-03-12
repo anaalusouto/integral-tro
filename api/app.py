@@ -1,9 +1,16 @@
+import os
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 
-app = Flask(__name__)
+# --- CONFIGURAÇÃO DE CAMINHOS PARA VERCEL ---
+# Isso resolve o erro 500 ao localizar a pasta templates na raiz
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+template_dir = os.path.join(base_dir, 'templates')
+
+app = Flask(__name__, template_folder=template_dir)
 CORS(app)
 
+# --- SEU BANCO DE DADOS ---
 NIVEIS_INFO = {
     0: {
         "nome": "Nível 1: Potências Simples",
@@ -25,7 +32,6 @@ NIVEIS_INFO = {
         "materia": "Diferenciando a integral do seno da integral do cosseno.",
         "dica_estudo": "DICA: A integral do cosseno é o seno positivo. É o par mais 'limpo' da trigonometria básica."
     }
-    # O sistema suporta até o nível 20 seguindo este padrão
 }
 
 CARDS_DB = {
@@ -48,7 +54,8 @@ BOSSES = {
 game_state = {"level": 0, "score": 0, "hands": 4, "hints": 10, "jokers": []}
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index(): 
+    return render_template('index.html')
 
 @app.route('/get_data')
 def get_data():
@@ -101,5 +108,6 @@ def solve_boss():
     game_state = {"level": 0, "score": 0, "hands": 4, "hints": 10, "jokers": []}
     return jsonify({"success": False})
 
+# Importante para a Vercel reconhecer o objeto 'app'
 if __name__ == '__main__':
     app.run(debug=True)
