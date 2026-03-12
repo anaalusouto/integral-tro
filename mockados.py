@@ -103,5 +103,5 @@ def solve_boss():
     game_state = {"level": 0, "score": 0, "hands": 4, "hints": 10, "jokers": []}
     return jsonify({"success": False})
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == '__main__':
+    app.run(debug=True)
