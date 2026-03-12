@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>INTEGRAL-TRO: ACADEMY</title>
+    <style>
+        :root { --red: #ff0044; --blue: #00d4ff; --gold: #ffd700; --dark: #0a0a0c; }
+        body { background: radial-gradient(circle, #1a1a2e, var(--dark)); color: white; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; }
+        .screen { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; animation: fadeIn 0.4s; }
+        .active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* HUD com Info do Nível */
+        .hud { background: rgba(0,0,0,0.9); padding: 20px; border: 2px solid var(--blue); border-radius: 15px; box-shadow: 0 0 20px var(--blue); width: 600px; margin-bottom: 20px; }
+        .materia-box { background: #222; padding: 10px; border-left: 4px solid var(--gold); margin: 10px 0; font-size: 0.9rem; text-align: left; }
+
+        /* Deck */
+        .hand { display: flex; gap: 10px; justify-content: center; margin: 20px 0; }
+        .card { width: 100px; height: 140px; background: #eee; color: #111; border-radius: 8px; border: 3px solid #fff; font-weight: bold; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 4px 4px 0 #000; transition: 0.2s; }
+        .card.selected { transform: translateY(-20px); border-color: var(--red); box-shadow: 0 0 15px var(--red); }
+
+        .btn { background: var(--red); color: white; border: 2px solid white; padding: 12px 25px; cursor: pointer; margin: 5px; font-size: 1.1rem; box-shadow: 3px 3px 0 #000; }
+        .btn-hint { background: var(--gold); color: black; font-weight: bold; }
+
+        #hint-display { background: rgba(255, 215, 0, 0.2); border: 1px dashed var(--gold); padding: 10px; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="scr-menu" class="screen active">
+        <h1 style="font-size: 4rem; text-shadow: 0 0 20px var(--red);">INTEGRAL-TRO</h1>
+        <button class="btn" onclick="goToGame()">COMEÇAR JORNADA</button>
+    </div>
+
+    <div id="scr-game" class="screen">
+        <div class="hud">
+            <h2 id="lvl-name" style="color: var(--gold); margin: 0;"></h2>
+            <div id="lvl-materia" class="materia-box"></div>
+            <div style="font-size: 1.4rem;">Score: <span id="ui-score">0</span> / <span id="ui-target">100</span></div>
+            <div>Mãos: <span id="ui-hands">4</span> | Dicas: <span id="ui-hints">10</span></div>
+            <div id="hint-display"></div>
+        </div>
+
+        <div class="hand" id="deck"></div>
+
+        <div style="margin-top: 20px;">
+            <button class="btn" onclick="play()">INTEGRAR!</button>
+            <button class="btn btn-hint" onclick="getHint()">💡 USAR DICA</button>
+        </div>
+    </div>
+
+    <div id="scr-boss" class="screen">
+        <h1 style="color: var(--red);">BOSS BATTLE</h1>
+        <div class="hud" style="border-color: var(--red);">
+            <p id="boss-q" style="font-size: 1.3rem;"></p>
+            <div id="boss-opts"></div>
+        </div>
+    </div>
+
+    <script>
+        let selected = [];
+
+        async function refresh() {
+            const r = await fetch('/get_data');
+            const d = await r.json();
+
+            document.getElementById('lvl-name').innerText = d.info.nome;
+            document.getElementById('lvl-materia').innerText = "ASSUNTO: " + d.info.materia;
+            document.getElementById('ui-score').innerText = d.state.score;
+            document.getElementById('ui-target').innerText = 100 + (d.state.level * 50);
+            document.getElementById('ui-hands').innerText = d.state.hands;
+            document.getElementById('ui-hints').innerText = d.state.hints;
+
+            const deck = document.getElementById('deck'); deck.innerHTML = '';
+            // No nível real, filtraríamos as cartas pelo nível, aqui mostramos o set básico
+            ["p1", "p1_res", "t1", "t1_res", "c1"].forEach(id => {
+                const div = document.createElement('div');
+                div.className = 'card'; div.innerText = d.cards[id].display;
+                div.onclick = () => { div.classList.toggle('selected'); if(selected.includes(id)) selected = selected.filter(i=>i!==id); else selected.push(id); };
+                deck.appendChild(div);
+            });
+
+            if(d.boss) {
+                document.getElementById('boss-q').innerText = d.boss.q;
+                const opts = document.getElementById('boss-opts'); opts.innerHTML = '';
+                d.boss.opts.forEach(o => {
+                    const b = document.createElement('button'); b.className = 'btn';
+                    b.innerText = o.t; b.onclick = () => solveBoss(o.c);
+                    opts.appendChild(b);
+                });
+            }
+        }
+
+        async function play() {
+            const r = await fetch('/validate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids:selected})});
+            const d = await r.json();
+            if(d.status === "BOSS_TIME") { goTo('scr-boss'); }
+            else if(d.status === "GAME_OVER") { alert("DERROTA! Recomeçando..."); location.reload(); }
+            selected = []; document.getElementById('hint-display').style.display = 'none';
+            refresh();
+        }
+
+        async function getHint() {
+            const r = await fetch('/use_hint', {method:'POST'});
+            const d = await r.json();
+            if(d.success) {
+                const box = document.getElementById('hint-display');
+                box.innerText = d.tip;
+                box.style.display = 'block';
+                document.getElementById('ui-hints').innerText = d.remaining;
+            } else { alert(d.msg); }
+        }
+
+        async function solveBoss(c) {
+            const r = await fetch('/solve_boss', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({correct:c})});
+            const d = await r.json();
+            if(d.success) { alert("BOSS VENCIDO!"); goTo('scr-game'); }
+            else { alert("ERROU! O Boss te mandou de volta pro nível 1."); location.reload(); }
+            refresh();
+        }
+
+        function goTo(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+        function goToGame() { goTo('scr-game'); refresh(); }
+    </script>
+</body>
+</html>
