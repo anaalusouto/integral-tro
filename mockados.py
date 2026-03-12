@@ -4,8 +4,6 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# --- BANCO DE DADOS DE NÍVEIS (CONTEÚDO PEDAGÓGICO) ---
-# Cada nível tem sua matéria e sua dica estratégica específica
 NIVEIS_INFO = {
     0: {
         "nome": "Nível 1: Potências Simples",
