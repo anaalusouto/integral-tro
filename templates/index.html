@@ -238,6 +238,7 @@
     function startGame() { document.getElementById('start-screen').style.display = 'none'; showGame(); }
     function showGame() { document.getElementById('shop-screen').style.display = 'none'; document.getElementById('game-screen').style.display = 'flex'; loadLevel(); }
 
+    // --- CARREGA O ROUND (RESET DE SCORE) ---
     async function loadLevel() {
         state.hands = state.maxHands;
         state.score = 0;
@@ -249,16 +250,20 @@
         updateUI();
     }
 
+    // --- PUXA QUESTÃO ALEATÓRIA DO PYTHON ---
     async function fetchNewQuestion() {
         state.selected = null;
         state.hasC = false;
         document.getElementById('btn-c').style.background = "var(--orange)";
+
         const res = await fetch(`/get_level/${state.lvl}`);
         const data = await res.json();
+
         document.getElementById('question-text').innerText = data.question;
         document.getElementById('boss-name').innerText = "BOSS: " + data.boss;
         state.currentAns = data.ans;
-        let finalTarget = data.target_score + (state.targetBonus || 0);
+
+        let finalTarget = (data.target_score || (state.lvl * 500)) + (state.targetBonus || 0);
         document.getElementById('target-ui').innerText = finalTarget;
 
         const hand = document.getElementById('hand-display');
@@ -282,36 +287,42 @@
         document.getElementById('btn-c').style.background = state.hasC ? "var(--matrix-green)" : "var(--orange)";
     }
 
-    // --- USAR TARÔ DO INVENTÁRIO ---
+    // --- LÓGICA DE USO MANUAL DE TARÔ ---
     function useTarot(index) {
         const tarot = state.tarots[index];
         tarot.action(state);
-        state.tarots.splice(index, 1); // Remove após usar
+        state.tarots.splice(index, 1);
         updateSlots();
         updateUI();
     }
 
+    // --- CÁLCULO DE SCORE E MÃOS ---
     function playHand() {
         if (!state.selected) return;
 
         if (state.selected === state.currentAns) {
             state.hands--;
-            let basePoints = 500;
-            let multiplier = state.nextHandMult || 1.0;
 
+            let basePoints = 500;
+            let totalMultiplier = state.nextHandMult || 1.0;
+
+            // 1. Soma bônus fixos (Chips)
+            state.jokers.forEach(j => { if (j.bonus) basePoints += j.bonus; });
+
+            // 2. Multiplica os bônus acumulados
             state.jokers.forEach(j => {
-                if (j.mult) multiplier *= j.mult;
-                if (j.bonus) basePoints += j.bonus;
+                if (j.mult) totalMultiplier *= j.mult;
                 if (j.type === "no_c_req") state.hasC = true;
             });
 
-            if (!state.hasC) multiplier *= 0.5;
+            if (!state.hasC) totalMultiplier *= 0.5;
 
-            state.score += (basePoints * multiplier);
+            let handScore = Math.floor(basePoints * totalMultiplier);
+            state.score += handScore;
             state.nextHandMult = 1.0;
             updateUI();
 
-            let finalTarget = ((state.lvl * 500) + (state.targetBonus || 0)) * state.winThreshold;
+            let finalTarget = ((state.lvl * 500) + (state.targetBonus || 0)) * (state.winThreshold || 1.0);
 
             if (state.score >= finalTarget) {
                 alert("ALVO ATINGIDO!");
@@ -320,25 +331,27 @@
                 state.targetBonus = 0;
                 openShop();
             } else if (state.hands <= 0) {
-                alert("REPROVADO!");
+                alert("REPROVADO POR NOTA!");
                 location.reload();
             } else {
                 fetchNewQuestion();
             }
         } else {
+            // Lógica de Erro com Shield (Monitoria)
             if (state.shield) {
-                alert("ERRO EVITADO!");
+                alert("ERRO EVITADO pela Monitoria!");
                 state.shield = false;
                 fetchNewQuestion();
             } else {
                 state.hands--;
                 if (state.death_flag || state.jokers.some(j => j.type === "death_risk")) {
-                    alert("GAME OVER!");
+                    alert("MORTE: Erro fatal!");
                     location.reload();
                 } else if (state.hands <= 0) {
                     alert("REPROVADO!");
                     location.reload();
                 } else {
+                    alert("ERROU! Próxima tentativa.");
                     fetchNewQuestion();
                 }
             }
@@ -346,14 +359,17 @@
         updateUI();
     }
 
+    // --- LOJA COM INTEGRAÇÃO PYTHON + TAROTS ALEATÓRIOS ---
     async function openShop() {
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('shop-screen').style.display = 'flex';
         const shelf = document.getElementById('shop-shelf');
         shelf.innerHTML = "";
+
         const response = await fetch('/get_shop_items');
         const shopJokers = await response.json();
 
+        // Sorteia Tarôs do pool de 50 para a loja
         const randomTarots = TAROTS_POOL.sort(() => 0.5 - Math.random()).slice(0, 2);
         const shopItems = [...shopJokers, ...randomTarots];
 
@@ -372,7 +388,7 @@
                             div.style.transform = "scale(0)";
                             setTimeout(() => div.remove(), 300);
                         } else {
-                            alert("Inventário de Tarô cheio!");
+                            alert("Inventário de Tarô cheio! Máximo de 3.");
                         }
                     } else {
                         state.money -= item.price;
@@ -389,24 +405,21 @@
         });
     }
 
+    // --- ATUALIZA SIDEBAR (JOKERS E TAROTS) ---
     function updateSlots() {
-        // Atualiza Coringas
         const js = document.getElementById('joker-slots');
         js.innerHTML = "";
         state.jokers.forEach(j => {
-            const d = document.createElement('div');
-            d.className = "joker-card";
-            d.innerHTML = `<b>${j.name}</b>`;
-            js.appendChild(d);
+            const d = document.createElement('div'); d.className = "joker-card";
+            d.innerHTML = `<b>${j.name}</b>`; js.appendChild(d);
         });
 
-        // Atualiza Tarôs (Agora clicáveis para usar)
         const ts = document.getElementById('tarot-slots');
         ts.innerHTML = "";
         state.tarots.forEach((t, index) => {
             const d = document.createElement('div');
             d.className = "tarot-card";
-            d.innerHTML = `<b>${t.name}</b><br><small>CLIQUE PARA USAR</small>`;
+            d.innerHTML = `<b>${t.name}</b><br><small>USAR AGORA</small>`;
             d.onclick = () => useTarot(index);
             ts.appendChild(d);
         });

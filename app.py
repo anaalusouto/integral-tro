@@ -107,11 +107,20 @@ def index():
 
 @app.route('/get_level/<int:lvl>')
 def get_level(lvl):
-    # Filtra questões condizentes com o nível (até o nível atual)
-    possible_questions = [q for q in QUESTIONS if q['level'] <= lvl]
+    # 1. Filtramos apenas as questões que pertencem ao nível atual
+    # Ou, para dar mais variedade, questões de níveis anteriores também:
+    possible_questions = [q for q in QUESTIONS if q['level'] == lvl]
+
+    # Caso não existam muitas questões do nível exato, pegamos as "até" aquele nível
+    if not possible_questions:
+        possible_questions = [q for q in QUESTIONS if q['level'] <= lvl]
+
+    # 2. O PULO DO GATO: Sorteamos uma questão aleatória da lista filtrada
     question = random.choice(possible_questions)
+
     boss = BOSSES.get(lvl, "Monitor")
 
+    # 3. Embaralhamos as opções para a resposta não ficar sempre na mesma posição
     options = list(question['options'])
     random.shuffle(options)
 
@@ -120,9 +129,8 @@ def get_level(lvl):
         "options": options,
         "boss": boss,
         "target_score": lvl * 500,
-        "ans": question['ans']  # Importante: enviamos a resposta para o JS validar
+        "ans": question['ans']
     })
-
 
 @app.route('/get_shop_items')
 def get_shop():
