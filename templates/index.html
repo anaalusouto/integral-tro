@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>INTEGRAl-TRO - THE BALATRO EDITION</title>
+    <title>INTEGRAL-TRO - THE BALATRO EDITION</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -103,7 +103,7 @@
 <body>
 
     <div id="start-screen" class="screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <h1 style="font-size: 9rem; color: var(--balatro-red); text-shadow: 8px 8px #000; margin: 0;">INTEGRATRO</h1>
+        <h1 style="font-size: 9rem; color: var(--balatro-red); text-shadow: 8px 8px #000; margin: 0;">INTEGRAL-TRO</h1>
 
         <div id="rules-mural">
             <h3 style="color: var(--gold); text-align: center; margin-top: 0;">📜 MANUAL DO CALOURO (REGRAS)</h3>
@@ -153,108 +153,273 @@
     </div>
 
     <script>
-        let state = { lvl: 1, score: 0, money: 10, hands: 3, maxHands: 3, hasC: false, selected: null, jokers: [], tarots: [] };
-        const answers = {"∫ x dx": "x²/2", "∫ sin(x) dx": "-cos(x)", "∫ eˣ dx": "eˣ", "∫ 1/x dx": "ln|x|", "∫ cos(x) dx": "sin(x)", "∫ sec²(x) dx": "tan(x)", "∫ 2x dx": "x²", "∫ 1/(1+x²) dx": "arctan(x)", "∫ ln(x) dx": "x ln(x) - x", "∫ x eˣ dx": "(x-1)eˣ"};
+    // Estado inicial
+    let state = {
+        lvl: 1,
+        score: 0,
+        money: 10,
+        hands: 3,
+        maxHands: 3,
+        hasC: false,
+        selected: null,
+        jokers: [],
+        tarots: [], // Inventário de tarôs (Máx 2 ou 3)
+        maxTarots: 2,
+        targetBonus: 0,
+        currentAns: "",
+        nextHandMult: 1,
+        shield: false,
+        death_flag: false,
+        winThreshold: 1.0
+    };
 
-        const JOKERS_DB = [
-            { id: 'partes', name: 'PARTES', desc: 'Mult x3 | Mãos -1', price: 6 },
-            { id: 'tabela', name: 'TABELA', desc: '+1000 Pts', price: 5 },
-            { id: 'monitor', name: 'MONITOR', desc: 'Ignora +C', price: 8 }
-        ];
+    const TAROTS_POOL = [
+        // --- ACADÊMICAS ---
+        { id: 't1', name: 'PASTA DO PROFESSOR', desc: 'Revela a resposta, reduz Mãos para 1.', price: 8, action: (s) => { alert("Resposta: " + s.currentAns); s.hands = 1; } },
+        { id: 't2', name: 'REVISÃO DE PROVA', desc: '+2 Mãos agora, perde $5.', price: 4, action: (s) => { s.hands += 2; s.money = Math.max(0, s.money - 5); } },
+        { id: 't3', name: 'CÓPIA DO COLEGA', desc: 'Ativa [+C], Alvo Boss +300.', price: 5, action: (s) => { s.hasC = true; s.targetBonus += 300; } },
+        { id: 't4', name: 'LÁPIS 2B', desc: 'Dica: Filtra a resposta correta.', price: 3, action: (s) => { alert("Foque na resposta que faz sentido matemático!"); } },
+        { id: 't5', name: 'CAFÉ DA MANHÃ', desc: 'Dobra Mult na próxima, perde 1 mão.', price: 5, action: (s) => { s.nextHandMult = 2; s.hands = Math.max(1, s.hands - 1); } },
+        { id: 't6', name: 'COLA NA CANETA', desc: 'Ganha o round agora, mas $0 de saldo.', price: 12, action: (s) => { s.score = 99999; s.money = 0; } },
+        { id: 't7', name: 'MONITORIA', desc: 'Próximo erro não consome mão.', price: 6, action: (s) => { s.shield = true; } },
+        { id: 't8', name: 'CÁLCULO I', desc: 'Volta p/ Nível 1, ganha $5.', price: 3, action: (s) => { s.lvl = 1; s.money += 5; fetchNewQuestion(); } },
+        { id: 't9', name: 'MURAL DE AVISOS', desc: 'Troca pergunta sem gastar mãos.', price: 2, action: (s) => { fetchNewQuestion(); } },
+        { id: 't10', name: 'DIPLOMA FALSO', desc: 'Pula nível, perde 1 slot Joker.', price: 15, action: (s) => { s.lvl++; openShop(); } },
 
-        const TAROTS_DB = [
-            { id: 'torre', name: 'A TORRE', desc: 'INSTA-WIN', price: 7 },
-            { id: 'ermitao', name: 'ERMITÃO', desc: '+2 Mãos', price: 4 }
-        ];
+        // --- PODER BRUTO ---
+        { id: 't11', name: 'A TORRE', desc: 'Score +2000, Alvo sobe 500.', price: 5, action: (s) => { s.score += 2000; s.targetBonus += 500; } },
+        { id: 't12', name: 'O MAGO', desc: 'Mult x1.5 no round, perde $3.', price: 4, action: (s) => { s.nextHandMult = 1.5; s.money = Math.max(0, s.money - 3); } },
+        { id: 't13', name: 'A FORÇA', desc: 'Dobra Score atual, Mãos = 1.', price: 7, action: (s) => { s.score *= 2; s.hands = 1; } },
+        { id: 't14', name: 'O SOL', desc: '+100 Pts por cada Joker que possui.', price: 4, action: (s) => { s.score += (s.jokers.length * 100); } },
+        { id: 't15', name: 'A LUA', desc: '+500 Pts, inverte cores da tela.', price: 2, action: (s) => { s.score += 500; document.body.style.filter = "invert(1)"; } },
+        { id: 't16', name: 'O MUNDO', desc: 'Alvo Boss = 1000 fixo.', price: 10, action: (s) => { s.targetBonus = -400; } },
+        { id: 't17', name: 'O CARRO', desc: 'Ganha +200 pts por cada $1.', price: 5, action: (s) => { s.score += (s.money * 200); } },
+        { id: 't18', name: 'A JUSTIÇA', desc: 'Iguala Score ao Alvo, mãos = 0.', price: 10, action: (s) => { s.score = (s.lvl * 500) + s.targetBonus; s.hands = 0; } },
+        { id: 't19', name: 'O JULGAMENTO', desc: 'Zera score, Mult x10 na próxima.', price: 8, action: (s) => { s.score = 0; s.nextHandMult = 10; } },
+        { id: 't20', name: 'A IMPERATRIZ', desc: 'Soma +1000 pts agora.', price: 6, action: (s) => { s.score += 1000; } },
 
-        function startGame() { document.getElementById('start-screen').style.display = 'none'; showGame(); }
-        function showGame() { document.getElementById('shop-screen').style.display = 'none'; document.getElementById('game-screen').style.display = 'flex'; loadLevel(); }
+        // --- ECONOMIA ---
+        { id: 't21', name: 'O ERMITÃO', desc: 'Ganha $1 por cada 500 pts.', price: 3, action: (s) => { s.money += Math.floor(s.score / 500); } },
+        { id: 't22', name: 'O HIEROFANTE', desc: 'Dobra dinheiro, Alvo +1000.', price: 6, action: (s) => { s.money *= 2; s.targetBonus += 1000; } },
+        { id: 't23', name: 'OS ENAMORADOS', desc: 'Ganha $5, Alvo +200.', price: 2, action: (s) => { s.money += 5; s.targetBonus += 200; } },
+        { id: 't24', name: 'RODA DA FORTUNA', desc: '50% ganhar $20 ou perder tudo.', price: 5, action: (s) => { if(Math.random() > 0.5) s.money += 20; else s.money = 0; } },
+        { id: 't25', name: 'O DIABO', desc: 'Ganha $15 agora, Erro = MORTE.', price: 0, action: (s) => { s.money += 15; s.death_flag = true; } },
+        { id: 't26', name: 'A ESTRELA', desc: 'Próxima compra custa $0.', price: 9, action: (s) => { s.money += 9; } },
+        { id: 't27', name: 'A TEMPERANÇA', desc: 'Ganha $1 por Joker ativo.', price: 4, action: (s) => { s.money += s.jokers.length; } },
+        { id: 't28', name: 'O LOUCO', desc: 'Ganha $1, Mult x2 na próxima.', price: 1, action: (s) => { s.money += 1; s.nextHandMult = 2; } },
+        { id: 't29', name: 'A PAPISA', desc: 'Ganha $5 agora.', price: 6, action: (s) => { s.money += 5; } },
+        { id: 't30', name: 'O IMPERADOR', desc: 'Ganha $5 por nível atual.', price: 5, action: (s) => { s.money += (s.lvl * 5); } },
 
-        async function loadLevel() {
-            state.hands = state.maxHands; state.hasC = false; state.selected = null;
-            document.getElementById('btn-c').style.background = "var(--orange)";
-            const res = await fetch(`/get_level/${state.lvl}`);
-            const data = await res.json();
-            document.getElementById('question-text').innerText = data.question;
-            document.getElementById('boss-name').innerText = "BOSS: " + data.boss;
-            document.getElementById('target-ui').innerText = state.lvl * 500;
-            const hand = document.getElementById('hand-display'); hand.innerHTML = "";
-            data.options.forEach(opt => {
-                const c = document.createElement('div'); c.className = "card-math"; c.innerText = opt;
-                c.onclick = () => { document.querySelectorAll('.card-math').forEach(x => x.classList.remove('selected')); c.classList.add('selected'); state.selected = opt; };
-                hand.appendChild(c);
-            });
-            updateSlots(); updateUI();
-        }
+        // --- PARAENSE ---
+        { id: 't31', name: 'AÇAÍ COM PEIXE', desc: 'Energia! Mult x5, mãos = 1.', price: 8, action: (s) => { s.nextHandMult = 5; s.hands = 1; } },
+        { id: 't32', name: 'CHUVA DAS DUAS', desc: 'Alvo -200, nova questão.', price: 4, action: (s) => { s.targetBonus -= 200; fetchNewQuestion(); } },
+        { id: 't33', name: 'VER-O-PESO', desc: 'Reseta Mãos p/ Máximo.', price: 7, action: (s) => { s.hands = s.maxHands; } },
+        { id: 't34', name: 'TACACÁ QUENTE', desc: 'Mult x2, perde $2.', price: 5, action: (s) => { s.nextHandMult = 2; s.money = Math.max(0, s.money - 2); } },
+        { id: 't35', name: 'MUNGUBÃO', desc: '+5000 pts agora.', price: 10, action: (s) => { s.score += 5000; } },
+        { id: 't36', name: 'MARAJÓ', desc: 'Lento: +1 mão máxima p/ sempre.', price: 15, action: (s) => { s.maxHands++; } },
+        { id: 't37', name: 'DOCAS', desc: 'Ganha $2 agora.', price: 6, action: (s) => { s.money += 2; } },
+        { id: 't38', name: 'BAIA DO GUAJARÁ', desc: 'Ganha $4 agora.', price: 5, action: (s) => { s.money += 4; } },
+        { id: 't39', name: 'RE-PA', desc: '50% Mult x4 ou x0.2.', price: 4, action: (s) => { s.nextHandMult = Math.random() > 0.5 ? 4 : 0.2; } },
+        { id: 't40', name: 'COMBU', desc: 'Alvo não sobe este round.', price: 8, action: (s) => { s.targetBonus = -200; } },
 
-        function toggleC() {
-            state.hasC = !state.hasC;
-            document.getElementById('btn-c').style.background = state.hasC ? "var(--matrix-green)" : "var(--orange)";
-        }
+        // --- CAOS ---
+        { id: 't41', name: 'O PENDURADO', desc: 'Zera Score, ganha +5 mãos.', price: 5, action: (s) => { s.score = 0; s.hands += 5; } },
+        { id: 't42', name: 'A MORTE', desc: 'Perde todos Jokers, ganha $20.', price: 0, action: (s) => { s.jokers = []; s.money += 20; } },
+        { id: 't43', name: 'EQUAÇÃO DIF.', desc: 'Ganha $10 agora.', price: 12, action: (s) => { s.money += 10; } },
+        { id: 't44', name: 'SÉRIE DE TAYLOR', desc: 'Ganha +300 pts agora.', price: 7, action: (s) => { s.score += 300; } },
+        { id: 't45', name: 'FRAÇÕES PARC.', desc: 'Divide Alvo por 2.', price: 6, action: (s) => { s.targetBonus -= (s.lvl * 250); } },
+        { id: 't46', name: 'SUBST. TRIG.', desc: 'Ganha $3 agora.', price: 5, action: (s) => { s.money += 3; } },
+        { id: 't47', name: 'STOKES', desc: 'Ganha +1000 pts agora.', price: 4, action: (s) => { s.score += 1000; } },
+        { id: 't48', name: 'DIRAC', desc: 'Ganha o Round agora.', price: 15, action: (s) => { s.score = 99999; } },
+        { id: 't49', name: 'CÁLC. NUMÉRICO', desc: 'Vitória com 90% do alvo.', price: 8, action: (s) => { s.winThreshold = 0.9; } },
+        { id: 't50', name: 'MERCY', desc: 'Cura penalidades, ganha $10.', price: 10, action: (s) => { s.targetBonus = 0; s.money += 10; s.death_flag = false; } }
+    ];
 
-        function playHand() {
-            if (!state.selected) return;
-            const q = document.getElementById('question-text').innerText;
+    function startGame() { document.getElementById('start-screen').style.display = 'none'; showGame(); }
+    function showGame() { document.getElementById('shop-screen').style.display = 'none'; document.getElementById('game-screen').style.display = 'flex'; loadLevel(); }
+
+    async function loadLevel() {
+        state.hands = state.maxHands;
+        state.score = 0;
+        state.hasC = false;
+        state.selected = null;
+        state.winThreshold = 1.0;
+        document.getElementById('btn-c').style.background = "var(--orange)";
+        await fetchNewQuestion();
+        updateUI();
+    }
+
+    async function fetchNewQuestion() {
+        state.selected = null;
+        state.hasC = false;
+        document.getElementById('btn-c').style.background = "var(--orange)";
+        const res = await fetch(`/get_level/${state.lvl}`);
+        const data = await res.json();
+        document.getElementById('question-text').innerText = data.question;
+        document.getElementById('boss-name').innerText = "BOSS: " + data.boss;
+        state.currentAns = data.ans;
+        let finalTarget = data.target_score + (state.targetBonus || 0);
+        document.getElementById('target-ui').innerText = finalTarget;
+
+        const hand = document.getElementById('hand-display');
+        hand.innerHTML = "";
+        data.options.forEach(opt => {
+            const c = document.createElement('div');
+            c.className = "card-math";
+            c.innerText = opt;
+            c.onclick = () => {
+                document.querySelectorAll('.card-math').forEach(x => x.classList.remove('selected'));
+                c.classList.add('selected');
+                state.selected = opt;
+            };
+            hand.appendChild(c);
+        });
+        updateSlots();
+    }
+
+    function toggleC() {
+        state.hasC = !state.hasC;
+        document.getElementById('btn-c').style.background = state.hasC ? "var(--matrix-green)" : "var(--orange)";
+    }
+
+    // --- USAR TARÔ DO INVENTÁRIO ---
+    function useTarot(index) {
+        const tarot = state.tarots[index];
+        tarot.action(state);
+        state.tarots.splice(index, 1); // Remove após usar
+        updateSlots();
+        updateUI();
+    }
+
+    function playHand() {
+        if (!state.selected) return;
+
+        if (state.selected === state.currentAns) {
             state.hands--;
+            let basePoints = 500;
+            let multiplier = state.nextHandMult || 1.0;
 
-            if (state.selected === answers[q]) {
-                let gain = 500;
-                if (state.jokers.some(j => j.id === 'partes')) gain *= 3;
-                if (state.jokers.some(j => j.id === 'tabela')) gain += 1000;
-                if (!state.hasC && !state.jokers.some(j => j.id === 'monitor')) gain *= 0.5;
+            state.jokers.forEach(j => {
+                if (j.mult) multiplier *= j.mult;
+                if (j.bonus) basePoints += j.bonus;
+                if (j.type === "no_c_req") state.hasC = true;
+            });
 
-                state.score += gain;
-                if (state.score >= (state.lvl * 500)) { state.lvl++; state.money += 10; openShop(); }
-                else if (state.hands <= 0) { alert("REPROVADO!"); location.reload(); }
-                else loadLevel();
-            } else {
-                if (state.hands <= 0) { alert("SEM MÃOS!"); location.reload(); }
-                else alert("ERROU!");
-            }
+            if (!state.hasC) multiplier *= 0.5;
+
+            state.score += (basePoints * multiplier);
+            state.nextHandMult = 1.0;
             updateUI();
-        }
 
-        function openShop() {
-            document.getElementById('game-screen').style.display = 'none';
-            document.getElementById('shop-screen').style.display = 'flex';
-            const shelf = document.getElementById('shop-shelf'); shelf.innerHTML = "";
-            [...JOKERS_DB, ...TAROTS_DB].forEach(item => {
-                const isT = TAROTS_DB.includes(item);
-                if (!isT && state.jokers.some(j => j.id === item.id)) return;
-                const div = document.createElement('div');
-                div.className = "shop-item";
-                div.innerHTML = `<div class="price">$${item.price}</div><b style="color:${isT?'var(--tarot-gold)':'var(--joker-purple)'}">${item.name}</b><br><small>${item.desc}</small>`;
-                div.onclick = () => {
-                    if (state.money >= item.price) {
+            let finalTarget = ((state.lvl * 500) + (state.targetBonus || 0)) * state.winThreshold;
+
+            if (state.score >= finalTarget) {
+                alert("ALVO ATINGIDO!");
+                state.lvl++;
+                state.money += 10;
+                state.targetBonus = 0;
+                openShop();
+            } else if (state.hands <= 0) {
+                alert("REPROVADO!");
+                location.reload();
+            } else {
+                fetchNewQuestion();
+            }
+        } else {
+            if (state.shield) {
+                alert("ERRO EVITADO!");
+                state.shield = false;
+                fetchNewQuestion();
+            } else {
+                state.hands--;
+                if (state.death_flag || state.jokers.some(j => j.type === "death_risk")) {
+                    alert("GAME OVER!");
+                    location.reload();
+                } else if (state.hands <= 0) {
+                    alert("REPROVADO!");
+                    location.reload();
+                } else {
+                    fetchNewQuestion();
+                }
+            }
+        }
+        updateUI();
+    }
+
+    async function openShop() {
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('shop-screen').style.display = 'flex';
+        const shelf = document.getElementById('shop-shelf');
+        shelf.innerHTML = "";
+        const response = await fetch('/get_shop_items');
+        const shopJokers = await response.json();
+
+        const randomTarots = TAROTS_POOL.sort(() => 0.5 - Math.random()).slice(0, 2);
+        const shopItems = [...shopJokers, ...randomTarots];
+
+        shopItems.forEach(item => {
+            const isTarot = TAROTS_POOL.some(t => t.id === item.id);
+            const div = document.createElement('div');
+            div.className = "shop-item";
+            div.innerHTML = `<div class="price">$${item.price}</div><b style="color:${isTarot ? 'var(--tarot-gold)' : 'var(--joker-purple)'}">${item.name}</b><br><small>${item.desc}</small>`;
+
+            div.onclick = () => {
+                if (state.money >= item.price) {
+                    if (isTarot) {
+                        if (state.tarots.length < state.maxTarots) {
+                            state.money -= item.price;
+                            state.tarots.push(item);
+                            div.style.transform = "scale(0)";
+                            setTimeout(() => div.remove(), 300);
+                        } else {
+                            alert("Inventário de Tarô cheio!");
+                        }
+                    } else {
                         state.money -= item.price;
-                        if (isT) state.tarots.push(item);
-                        else { state.jokers.push(item); if(item.id === 'partes') state.maxHands--; }
-                        div.style.transform = "scale(0)"; setTimeout(() => div.remove(), 300);
-                        document.getElementById('shop-money').innerText = state.money;
+                        state.jokers.push(item);
+                        if(item.type === 'hand_penalty') state.maxHands--;
+                        div.style.transform = "scale(0)";
+                        setTimeout(() => div.remove(), 300);
                     }
-                };
-                shelf.appendChild(div);
-            });
-        }
+                    updateUI();
+                    updateSlots();
+                } else { alert("Saldo insuficiente!"); }
+            };
+            shelf.appendChild(div);
+        });
+    }
 
-        function updateSlots() {
-            const js = document.getElementById('joker-slots'); js.innerHTML = "";
-            state.jokers.forEach(j => { const d = document.createElement('div'); d.className = "joker-card"; d.innerHTML = `<b>${j.name}</b>`; js.appendChild(d); });
-            const ts = document.getElementById('tarot-slots'); ts.innerHTML = "";
-            state.tarots.forEach(t => {
-                const d = document.createElement('div'); d.className = "tarot-card"; d.innerHTML = `<b>${t.name}</b><br>USAR`;
-                d.onclick = () => { if(t.id === 'torre') state.score = 99999; if(t.id === 'ermitao') state.hands += 2; state.tarots = state.tarots.filter(x => x !== t); d.remove(); updateUI(); };
-                ts.appendChild(d);
-            });
-        }
+    function updateSlots() {
+        // Atualiza Coringas
+        const js = document.getElementById('joker-slots');
+        js.innerHTML = "";
+        state.jokers.forEach(j => {
+            const d = document.createElement('div');
+            d.className = "joker-card";
+            d.innerHTML = `<b>${j.name}</b>`;
+            js.appendChild(d);
+        });
 
-        function updateUI() {
-            document.getElementById('score-ui').innerText = state.score;
-            document.getElementById('hands-ui').innerText = state.hands;
-            document.getElementById('money-ui').innerText = "$" + state.money;
-        }
+        // Atualiza Tarôs (Agora clicáveis para usar)
+        const ts = document.getElementById('tarot-slots');
+        ts.innerHTML = "";
+        state.tarots.forEach((t, index) => {
+            const d = document.createElement('div');
+            d.className = "tarot-card";
+            d.innerHTML = `<b>${t.name}</b><br><small>CLIQUE PARA USAR</small>`;
+            d.onclick = () => useTarot(index);
+            ts.appendChild(d);
+        });
+    }
 
-        document.getElementById('start-screen').style.display = 'flex';
-    </script>
+    function updateUI() {
+        document.getElementById('score-ui').innerText = Math.floor(state.score);
+        document.getElementById('hands-ui').innerText = state.hands;
+        document.getElementById('money-ui').innerText = "$" + state.money;
+        document.getElementById('shop-money').innerText = state.money;
+    }
+
+    document.getElementById('start-screen').style.display = 'flex';
+</script>
 </body>
 </html>
